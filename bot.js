@@ -15,7 +15,7 @@ if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
 
 const BOT_NAME = 'Personal Bot';
 const GROUP_NAME = 'Playground';
-const MODEL = 'gemini-3-flash-preview';
+const MODEL = 'gemini-3-pro-preview';
 const MAX_HISTORY = 20;
 
 const SYSTEM_PROMPT = `You are "${BOT_NAME}", a friendly and highly capable personal AI assistant chatting inside a WhatsApp group.

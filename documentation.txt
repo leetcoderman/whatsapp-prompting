@@ -1,0 +1,323 @@
+================================================================================
+              WHATSAPP PERSONAL BOT — PRODUCT DOCUMENTATION
+================================================================================
+                    Author: Shikhar Gupta (Product Manager)
+                    Date: February 21, 2026
+                    Version: 1.0
+                    Repository: github.com/leetcoderman/whatsapp-prompting
+================================================================================
+
+
+1. EXECUTIVE SUMMARY
+================================================================================
+
+WhatsApp Personal Bot is a lightweight AI assistant that integrates Google's
+Gemini 3 Pro model directly into a WhatsApp group chat. The product enables a
+user to interact with a state-of-the-art large language model through the most
+familiar messaging interface on their phone — WhatsApp — without installing any
+additional apps, switching platforms, or opening a browser.
+
+The bot runs as a background service on the user's Mac and connects to WhatsApp
+via the Linked Devices feature. It monitors a designated group called
+"Playground" and responds to prompts triggered by a specific keyword, creating
+a seamless conversational AI experience within the native WhatsApp UI.
+
+
+2. PROBLEM STATEMENT
+================================================================================
+
+2.1 THE GAP
+
+AI assistants like ChatGPT, Gemini, and Claude require users to:
+  - Open a separate app or browser tab
+  - Maintain yet another account and login
+  - Context-switch away from their primary communication tool
+
+For a power user who lives on WhatsApp, this friction is significant. The
+mental overhead of switching apps breaks the flow of thought, especially for
+quick questions, brainstorming, or on-the-go queries from a mobile device.
+
+2.2 THE OPPORTUNITY
+
+WhatsApp is the most used messaging app globally (2.7B+ users). By embedding
+an AI assistant directly into a WhatsApp group chat, we eliminate all friction:
+  - Zero app installs
+  - Zero new accounts
+  - The user types a question in the same app they already have open
+  - Responses arrive as standard WhatsApp messages, with full notification
+    support, read receipts, and message history
+
+2.3 TARGET USER
+
+Primary persona: A tech-savvy professional who wants instant access to AI
+capabilities without leaving WhatsApp. They own a Mac (for running the bot)
+and an iPhone (for interacting with the bot via WhatsApp).
+
+
+3. PRODUCT REQUIREMENTS
+================================================================================
+
+3.1 FUNCTIONAL REQUIREMENTS
+
+  FR-1: WHATSAPP INTEGRATION
+    - The bot MUST connect to the user's personal WhatsApp number (non-business)
+    - The bot MUST authenticate via QR code scanning (Linked Devices)
+    - The bot MUST maintain persistent sessions across restarts (no re-scan)
+    - The bot MUST monitor a WhatsApp group named "Playground"
+
+  FR-2: AI RESPONSE ENGINE
+    - The bot MUST use Google Gemini 3 Pro (model: gemini-3-pro-preview)
+    - The bot MUST send user prompts to the Gemini API and return responses
+    - The bot MUST maintain conversation history (last 20 messages) for context
+    - The bot MUST have a system prompt defining its persona as "Personal Bot"
+
+  FR-3: TRIGGER MECHANISM
+    - The bot MUST only respond to messages ending with the keyword "Over"
+    - The keyword MUST be case-insensitive (e.g., "over", "Over", "OVER")
+    - The keyword MUST be stripped from the prompt before sending to Gemini
+    - The bot MUST NOT respond to messages without the trigger keyword
+    - The bot MUST NOT trigger on its own replies (loop prevention)
+
+  FR-4: RESPONSE FORMAT
+    - Every bot reply MUST begin with bold text: *// Bot reply*
+    - Every bot reply MUST end with bold text: *// Bot reply end*
+    - The AI-generated content appears between these delimiters
+    - The bot MUST never include the word "Over" in its responses
+
+  FR-5: BACKGROUND OPERATION
+    - The bot MUST run as a background service via PM2 (process manager)
+    - The bot MUST auto-restart on crash
+    - The bot MUST keep the Mac awake when plugged into power (via caffeinate)
+    - The bot MUST NOT require a terminal window to remain open
+
+3.2 NON-FUNCTIONAL REQUIREMENTS
+
+  NFR-1: COST
+    - The entire solution MUST be free to operate
+    - Google Gemini API: Free tier (sufficient for personal use)
+    - WhatsApp: Free (personal account)
+    - Hosting: User's own Mac (no cloud costs)
+
+  NFR-2: LATENCY
+    - The bot SHOULD show a typing indicator while generating a response
+    - Response time depends on Gemini API latency (typically 2-5 seconds)
+
+  NFR-3: SECURITY
+    - The Gemini API key MUST NOT be committed to version control
+    - The .env file MUST be git-ignored
+    - WhatsApp session data MUST be git-ignored
+
+  NFR-4: RELIABILITY
+    - PM2 ensures the bot auto-restarts on unexpected crashes
+    - The bot gracefully handles Gemini API errors with user-friendly messages
+    - Message deduplication prevents double-processing
+
+
+4. TECHNICAL ARCHITECTURE
+================================================================================
+
+4.1 SYSTEM OVERVIEW
+
+  ┌──────────────────────────────────────────────────────┐
+  │                   USER'S MAC                         │
+  │                                                      │
+  │  ┌──────────────┐    ┌──────────────────────────┐    │
+  │  │   PM2         │───▶│  bot.js                  │    │
+  │  │  (process     │    │  ├─ whatsapp-web.js       │    │
+  │  │   manager)    │    │  │  └─ Puppeteer/Chromium  │    │
+  │  └──────────────┘    │  ├─ @google/genai SDK     │    │
+  │                      │  └─ Message Handler       │    │
+  │  ┌──────────────┐    └──────────┬───────────────┘    │
+  │  │  caffeinate   │              │                     │
+  │  │  (sleep       │              │ HTTPS               │
+  │  │   prevention) │              │                     │
+  │  └──────────────┘              ▼                     │
+  └────────────────────────────────┬─────────────────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+                    ▼                             ▼
+          ┌─────────────────┐          ┌──────────────────┐
+          │  WhatsApp Web    │          │  Google Gemini    │
+          │  Servers         │          │  API              │
+          │  (message relay) │          │  (AI inference)   │
+          └────────┬────────┘          └──────────────────┘
+                   │
+                   ▼
+          ┌─────────────────┐
+          │  iPhone WhatsApp │
+          │  "Playground"    │
+          │  group chat      │
+          └─────────────────┘
+
+4.2 TECHNOLOGY STACK
+
+  Component           Technology             Version
+  ─────────────────── ────────────────────── ──────────
+  Runtime             Node.js                20+
+  WhatsApp Client     whatsapp-web.js        1.34.x
+  Browser Engine      Puppeteer (Chromium)   bundled
+  AI Model            Google Gemini 3 Pro    preview
+  AI SDK              @google/genai          1.42.x
+  QR Display          qrcode-terminal        0.12.x
+  Env Management      dotenv                 17.x
+  Process Manager     PM2                    5.x
+  Sleep Prevention    macOS caffeinate       built-in
+
+4.3 MESSAGE FLOW
+
+  1. User sends "What is Docker Over" in Playground group on iPhone
+  2. WhatsApp servers relay the message to all linked devices
+  3. Puppeteer (running as a linked device) receives the message event
+  4. bot.js intercepts the message via 'message' / 'message_create' events
+  5. Message handler checks:
+     a. Is the bot ready? (group lookup complete)
+     b. Is this message in the Playground group?
+     c. Has this message already been processed? (deduplication)
+     d. Is this a bot-sent message? (loop prevention)
+     e. Does it end with "Over"?
+  6. "Over" is stripped → "What is Docker" is sent to Gemini 3 Pro
+  7. Gemini returns the AI-generated answer
+  8. Bot sends the formatted reply to the Playground group:
+     *// Bot reply*
+     [answer]
+     *// Bot reply end*
+  9. The reply appears as a WhatsApp message on the user's iPhone
+
+
+5. CONVERSATION HISTORY DESIGN
+================================================================================
+
+The bot maintains a rolling window of the last 20 messages (configurable via
+MAX_HISTORY). This enables contextual follow-up questions:
+
+  User: "Explain quantum computing Over"
+  Bot:  [explains quantum computing]
+  User: "Give me a simpler analogy Over"
+  Bot:  [uses context from previous exchange to give a simpler analogy]
+
+History is stored in-memory as an array of role-tagged messages:
+  - { role: 'user', parts: [{ text: '...' }] }
+  - { role: 'model', parts: [{ text: '...' }] }
+
+History resets when the bot restarts.
+
+
+6. TRIGGER SYSTEM — "OVER" KEYWORD
+================================================================================
+
+6.1 WHY A TRIGGER KEYWORD?
+
+The initial design used question marks (?) as the trigger. This caused an
+infinite loop: Gemini's responses often contain question marks, which would
+re-trigger the bot. The "Over" keyword was chosen because:
+
+  - It is a natural conversational sign-off (walkie-talkie convention)
+  - AI models virtually never end responses with "Over"
+  - It is unlikely to appear at the end of normal group chat messages
+  - The system prompt explicitly instructs Gemini to never use it
+
+6.2 TRIGGER RULES
+
+  Message                              Triggers Bot?
+  ──────────────────────────────────── ────────────
+  "What is Docker Over"                ✅ Yes
+  "What is Docker over"                ✅ Yes (case-insensitive)
+  "What is Docker OVER"                ✅ Yes
+  "What is Docker?"                    ❌ No
+  "Hello everyone"                     ❌ No
+  "The meeting is over for today"      ✅ Yes (ends with "over")
+  "Game over"                          ✅ Yes (ends with "over")
+
+  Note: The regex /\bOver\s*$/i ensures "Over" is matched as a whole word
+  at the end of the message.
+
+
+7. DEPLOYMENT MODEL
+================================================================================
+
+7.1 LOCAL DEPLOYMENT (CURRENT — V1.0)
+
+  The bot runs on the user's MacBook Air as a PM2 background process.
+
+  Startup: ./start.sh
+    └─▶ PM2 spawns bot.js as a daemon
+    └─▶ caffeinate prevents system sleep (when on power)
+
+  Pros:
+    - Completely free
+    - Simple setup (< 5 minutes)
+    - No cloud accounts needed
+
+  Cons:
+    - Requires Mac to be on and plugged in
+    - Bot pauses if Mac goes to sleep (lid closed on battery)
+
+7.2 FUTURE CONSIDERATION: CLOUD DEPLOYMENT
+
+  If 24/7 uptime is required regardless of Mac state, the recommended
+  path is Oracle Cloud Always-Free tier:
+    - 1 ARM VM with 1GB RAM (always free, no credit card charges)
+    - Clone repo, install Node.js, run with PM2
+    - Fully persistent — runs even when user's Mac is off
+
+
+8. FILE MANIFEST
+================================================================================
+
+  File              Purpose                                    Git-tracked?
+  ───────────────── ────────────────────────────────────────── ────────────
+  bot.js            Main bot: WhatsApp client + Gemini logic   ✅ Yes
+  start.sh          Background launcher (PM2 + caffeinate)     ✅ Yes
+  package.json      Node.js config with start script           ✅ Yes
+  package-lock.json Dependency lock file                       ✅ Yes
+  README.md         Setup guide and usage documentation        ✅ Yes
+  .env.example      API key template                           ✅ Yes
+  .gitignore        Exclusion rules for secrets/cache          ✅ Yes
+  documentation.txt This document                              ✅ Yes
+  .env              Real API key (GEMINI_API_KEY)              ❌ No
+  .wwebjs_auth/     WhatsApp session data                      ❌ No
+  .wwebjs_cache/    Chromium cache                             ❌ No
+  node_modules/     Dependencies                               ❌ No
+
+
+9. RISK REGISTER
+================================================================================
+
+  Risk                           Impact    Mitigation
+  ────────────────────────────── ──────── ─────────────────────────────────
+  WhatsApp bans automated use    High     Keep usage conversational, avoid
+  on personal numbers                     bulk messaging. Use a spare
+                                          number if concerned.
+
+  Gemini API rate limits         Low      Free tier is generous for
+                                          personal use (60 RPM).
+
+  whatsapp-web.js breaks due     Medium   Pin dependency version in
+  to WhatsApp Web updates                 package.json. Monitor GitHub
+                                          issues for the library.
+
+  Session expires unexpectedly   Low      Delete .wwebjs_auth/ and
+                                          re-scan QR code.
+
+  Mac goes to sleep              Medium   caffeinate prevents sleep when
+                                          on power. User must keep Mac
+                                          plugged in for 24/7 operation.
+
+
+10. VERSION HISTORY
+================================================================================
+
+  Version  Date          Changes
+  ──────── ──────────── ──────────────────────────────────────────────────
+  0.1      2026-02-21   Initial bot with direct message response (scrapped)
+  0.2      2026-02-21   Pivoted to group-based approach ("Playground")
+  0.3      2026-02-21   Trigger changed from "?" to "Over" (loop fix)
+  0.4      2026-02-21   Reply format: *// Bot reply* delimiters
+  0.5      2026-02-21   Model upgraded from gemini-pro to gemini-3-pro
+  1.0      2026-02-21   PM2 background service, pushed to GitHub
+
+
+================================================================================
+                          END OF DOCUMENTATION
+================================================================================
