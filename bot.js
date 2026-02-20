@@ -15,7 +15,7 @@ if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
 
 const BOT_NAME = 'Personal Bot';
 const GROUP_NAME = 'Playground';
-const MODEL = 'gemini-3.1-pro-preview';
+const MODEL = 'gemini-3-flash-preview';
 const MAX_HISTORY = 20;
 
 const SYSTEM_PROMPT = `You are "${BOT_NAME}", a friendly and highly capable personal AI assistant chatting inside a WhatsApp group.
@@ -151,7 +151,7 @@ async function handleMessage(msg) {
         await chat.sendStateTyping();
 
         const reply = await askGemini(question);
-        const formattedReply = `🤖 *${BOT_NAME}:*\n\n${reply}`;
+        const formattedReply = `*// Bot reply*\n\n${reply}\n\n*// Bot reply end*`;
 
         const sentMsg = await chat.sendMessage(formattedReply);
         if (sentMsg?.id?._serialized) {
